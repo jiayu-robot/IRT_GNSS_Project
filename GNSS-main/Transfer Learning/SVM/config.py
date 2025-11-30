@@ -15,7 +15,7 @@ print(f"--- [Config] 正在使用的设备: {DEVICE} ---")
 # (!! 这是你必须确保正确的地方 !!)
 
 # 特征列表 
-FEATURES = ["cn0", "elevation", "pseudorange_corrected_cb", "doppler_shift","sat_type"]#"doppler_shift",
+FEATURES = ["cn0", "elevation", "pseudorange_residual", "doppler_shift","sat_type"]#"doppler_shift",
 
 # 你的标签列名 (在仿真数据中)
 TARGET_COL = "multipath"
@@ -33,7 +33,7 @@ TIME_COL = "gps_time" # (!! 如果你的时间列名不同，请修改这里 !!)
 # (!! 这是你必须确保正确的地方 !!)
 
 # 序列长度 (对应你数据中的 5)
-SEQ_LEN = 10
+SEQ_LEN = 5
 
 # 滑动窗口的步长 (Step)
 # step=1 会产生最多的数据 (高度重叠)

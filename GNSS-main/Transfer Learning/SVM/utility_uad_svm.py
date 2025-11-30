@@ -370,7 +370,15 @@ def create_sequences_for_svm(df_src_ignored, df_tgt, config):
         print(f"  - 处理源域 Case {src_id}: {os.path.basename(path)}")
         
         df_case = pd.read_csv(path)
-        
+        # -----------------------------------------------------------
+        # [新增] 2. 立即应用标准化 (使用 DANN 训练好的 Scaler)
+        # -----------------------------------------------------------
+        # 这一步至关重要！否则 LSTM 吃到的是未标准化的数据
+        df_case = lstm_standardization_train_pre_svm(
+            df_case, 
+            config.FEATURES, 
+            config.MODEL_SAVE_DIR
+        )
         # 调用 make_sequences_for_svm (这个底层函数不用改)
         # 注意：这里需要 target 存在
         X, y, S, I = make_sequences_for_svm(
@@ -613,3 +621,79 @@ def standardize_features(X_src_feat, X_tgt_feat):
     return X_src_feat_scaled, X_tgt_feat_scaled
 
 # 假设 standardize_features 函数已在上方定义
+
+
+# =============================================================================
+# lstm 的 训练和 使用过程中需要的工具函数  标准化
+# =============================================================================
+import pandas as pd
+import numpy as np
+import os
+import joblib
+from sklearn.preprocessing import StandardScaler
+
+# =============================================================================
+#  标准化辅助函数 (Standardization Helpers)
+# =============================================================================
+
+def train_lstm_dann_standardization(df, features, scaler_save_dir):
+    """
+    [函数 1] 专门用于 LSTM (DANN) 训练阶段：
+    1. 接收源域数据 (Source Data)
+    2. 计算均值和方差 (Fit)
+    3. 转换数据 (Transform)
+    4. 保存 Scaler 到硬盘 (Save)
+    
+    调用位置: LSTM_feature_extractor.py -> main() -> 数据准备阶段
+    """
+    print(f"\n[Standardization] 正在计算源域统计量并标准化 (Fit & Transform)...")
+    
+    # 1. 防止污染原数据，创建副本
+    df_scaled = df.copy()
+    
+    # 2. 初始化并拟合 Scaler
+    scaler = StandardScaler()
+    scaler.fit(df[features])
+    
+    # --- 调试信息 ---
+    print(f" -> 特征均值 (前5个): {scaler.mean_[:5]}")
+    print(f" -> 特征方差 (前5个): {scaler.var_[:5]}")
+    
+    # 3. 应用转换
+    df_scaled[features] = scaler.transform(df_scaled[features])
+    
+    # 4. 保存 Scaler (这把尺子之后 SVM 阶段要用)
+    os.makedirs(scaler_save_dir, exist_ok=True)
+    scaler_path = os.path.join(scaler_save_dir, "global_scaler.pkl")
+    joblib.dump(scaler, scaler_path)
+    print(f" -> Scaler 已保存至: {scaler_path}")
+    
+    return df_scaled
+
+
+def lstm_standardization_train_pre_svm(df, features, scaler_save_dir):
+    """
+    [函数 2] 专门用于 SVM 准备阶段 (特征提取前):
+    1. 接收任意数据 (可以是源域数据用于训练SVM，也可以是真实数据用于预测)
+    2. 加载之前 DANN 训练生成的 Scaler (Load)
+    3. 使用固定的均值方差转换数据 (Transform only)
+    
+    调用位置: svm_main.py -> main_single_svm() -> 特征提取前
+    """
+    scaler_path = os.path.join(scaler_save_dir, "global_scaler.pkl")
+    
+    if not os.path.exists(scaler_path):
+        raise FileNotFoundError(f"错误: 找不到 Scaler 文件 {scaler_path}。请务必先运行 DANN 训练 (LSTM_feature_extractor.py) 来生成它！")
+    
+    # print(f"[Standardization] 正在加载 Scaler 并应用 (Transform only)...") 
+    
+    # 1. 防止污染
+    df_scaled = df.copy()
+    
+    # 2. 加载 Scaler
+    scaler = joblib.load(scaler_path)
+    
+    # 3. 应用转换 (注意：这里绝对不能 Fit，只能 Transform！)
+    df_scaled[features] = scaler.transform(df_scaled[features])
+    
+    return df_scaled
